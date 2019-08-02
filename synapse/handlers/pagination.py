@@ -101,7 +101,13 @@ class PaginationHandler(object):
 
         for room in rooms:
             room_id = room["room_id"]
-            ts = self.clock.time_msec() - (room["max_lifetime"] * 1000)
+
+            max_lifetime = room["max_lifetime"]
+
+            if max_lifetime is None:
+                max_lifetime = self.config.retention_max_lifetime
+
+            ts = self.clock.time_msec() - (max_lifetime * 1000)
 
             stream_ordering = (
                 yield self.store.find_first_stream_ordering_after_ts(ts)

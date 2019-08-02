@@ -218,32 +218,33 @@ class FederationServer(FederationBase):
                 )
                 continue
 
-            try:
-                retention_policy = yield self.store.get_retention_policy_for_room(
-                    room_id
-                )
+            if self.config.retention_enabled:
+                try:
+                    retention_policy = yield self.store.get_retention_policy_for_room(
+                        room_id
+                    )
 
-                max_lifetime = retention_policy["max_lifetime"]
-                if max_lifetime is None:
-                    max_lifetime = self.config.retention_max_lifetime
+                    max_lifetime = retention_policy["max_lifetime"]
+                    if max_lifetime is None:
+                        max_lifetime = self.config.retention_max_lifetime
 
-                oldest_allowed_ts = self.clock.time_msec() - (max_lifetime * 1000)
-                event_ts = p.get("origin_server_ts", 0)
+                    oldest_allowed_ts = self.clock.time_msec() - (max_lifetime * 1000)
+                    event_ts = p.get("origin_server_ts", 0)
 
-                if oldest_allowed_ts > event_ts:
-                    # Purge jobs are likely to get out of sync between servers, so we need
-                    # to ignore events that we have likely already purged.
+                    if oldest_allowed_ts > event_ts:
+                        # Purge jobs are likely to get out of sync between servers, so we
+                        # need to ignore events that we have likely already purged.
+                        logger.info(
+                            "Ignoring event %s that's older than allowed by the retention"
+                            " policy for room %s" % (possible_event_id, room_id)
+                        )
+                        continue
+                except StoreError:
                     logger.info(
-                        "Ignoring event %s that's older than allowed by the retention"
-                        " policy for room %s" % (possible_event_id, room_id)
+                        "Can't retrieve the retention policy for room %s, ignoring PDU",
+                        room_id,
                     )
                     continue
-            except StoreError:
-                logger.info(
-                    "Couldn't retrieve the retention policy for room %s, ignoring PDU",
-                    room_id,
-                )
-                continue
 
             event = event_from_pdu_json(p, format_ver)
             pdus_by_room.setdefault(room_id, []).append(event)

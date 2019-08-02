@@ -344,6 +344,8 @@ class RoomStore(RoomWorkerStore, SearchStore):
                         },
                     )
 
+                self._create_room_retention_row_txn(txn, room_id)
+
             with self._public_room_id_gen.get_next() as next_id:
                 yield self.runInteraction("store_room_txn", store_room_txn, next_id)
         except Exception as e:
@@ -787,3 +789,13 @@ class RoomStore(RoomWorkerStore, SearchStore):
             ret = {}
 
         defer.returnValue(ret)
+
+    @defer.inlineCallbacks
+    def _create_room_retention_row_txn(self, txn, room_id):
+        yield self._simple_insert_txn(
+            txn=txn,
+            table="rooms",
+            values={
+                "room_id": room_id,
+            },
+        )

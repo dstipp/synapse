@@ -234,12 +234,12 @@ class ServerConfig(Config):
 
         # MSC1763 mandates that lifetimes are expressed in seconds, while parse_duration
         # returns milliseconds, so we need to convert it everytime.
-        self.retention_max_lifetime = int(self.parse_duration(
-            retention_config.get("max_lifetime", 0)
+        self.retention_min_lifetime = int(self.parse_duration(
+            retention_config.get("min_lifetime", "1d")
         ) / 1000)
 
-        self.retention_min_lifetime = int(self.parse_duration(
-            retention_config.get("min_lifetime", 0)
+        self.retention_max_lifetime = int(self.parse_duration(
+            retention_config.get("max_lifetime", "1y")
         ) / 1000)
 
         if self.retention_min_lifetime > self.retention_max_lifetime:

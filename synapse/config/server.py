@@ -230,6 +230,8 @@ class ServerConfig(Config):
 
         retention_config = config.get("retention", {})
 
+        # TODO: require that min_lifetime and max_lifetime are filled if enabled is True
+        #   and drop defaults.
         self.retention_enabled = retention_config.get("enabled", False)
 
         # MSC1763 mandates that lifetimes are expressed in seconds, while parse_duration

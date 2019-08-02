@@ -32,6 +32,7 @@ from synapse.api.errors import (
     FederationError,
     IncompatibleRoomVersionError,
     NotFoundError,
+    StoreError,
     SynapseError,
     UnsupportedRoomVersionError,
 )
@@ -75,6 +76,8 @@ class FederationServer(FederationBase):
 
         self.auth = hs.get_auth()
         self.handler = hs.get_handlers().federation_handler
+        self.config = hs.config
+        self.clock = hs.get_clock()
 
         self._server_linearizer = Linearizer("fed_server")
         self._transaction_linearizer = Linearizer("fed_txn_handler")
@@ -212,6 +215,32 @@ class FederationServer(FederationBase):
                     "Ignoring PDU for room %s with unknown version %s",
                     room_id,
                     room_version,
+                )
+                continue
+
+            try:
+                retention_policy = yield self.store.get_retention_policy_for_room(
+                    room_id
+                )
+                max_lifetime = retention_policy.get(
+                    "max_lifetime", self.config.retention_max_lifetime,
+                )
+
+                oldest_allowed_ts = self.clock.time_msec() - (max_lifetime * 1000)
+                event_ts = p.get("origin_server_ts", 0)
+
+                if oldest_allowed_ts > event_ts:
+                    # Purge jobs are likely to get out of sync between servers, so we need
+                    # to ignore events that we have likely already purged.
+                    logger.info(
+                        "Ignoring event %s that's older than allowed by the retention"
+                        " policy for room %s" % (possible_event_id, room_id)
+                    )
+                    continue
+            except StoreError:
+                logger.info(
+                    "Couldn't retrieve the retention policy for room %s, ignoring PDU",
+                    room_id,
                 )
                 continue
 

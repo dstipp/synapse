@@ -558,6 +558,10 @@ class RoomStore(RoomWorkerStore, SearchStore):
                 },
             )
 
+            self._invalidate_cache_and_stream(
+                txn, self.get_retention_policy_for_room, (event.room_id,)
+            )
+
     def add_event_report(
         self, room_id, event_id, user_id, reason, content, received_ts
     ):
@@ -767,3 +771,19 @@ class RoomStore(RoomWorkerStore, SearchStore):
         )
 
         defer.returnValue(rooms)
+
+    @cachedInlineCallbacks()
+    def get_retention_policy_for_room(self, room_id):
+        ret = yield self._simple_select_one(
+            table="room_retention",
+            keyvalues={
+                "room_id": room_id,
+            },
+            retcols=["min_lifetime", "max_lifetime"],
+            allow_none=True,
+        )
+
+        if ret is None:
+            ret = {}
+
+        defer.returnValue(ret)

@@ -794,7 +794,7 @@ class RoomStore(RoomWorkerStore, SearchStore):
     def _create_room_retention_row_txn(self, txn, room_id):
         yield self._simple_insert_txn(
             txn=txn,
-            table="rooms",
+            table="room_retention",
             values={
                 "room_id": room_id,
             },

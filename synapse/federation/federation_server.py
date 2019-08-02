@@ -222,9 +222,10 @@ class FederationServer(FederationBase):
                 retention_policy = yield self.store.get_retention_policy_for_room(
                     room_id
                 )
-                max_lifetime = retention_policy.get(
-                    "max_lifetime", self.config.retention_max_lifetime,
-                )
+
+                max_lifetime = retention_policy["max_lifetime"]
+                if max_lifetime is None:
+                    max_lifetime = self.config.retention_max_lifetime
 
                 oldest_allowed_ts = self.clock.time_msec() - (max_lifetime * 1000)
                 event_ts = p.get("origin_server_ts", 0)

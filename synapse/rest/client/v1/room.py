@@ -101,6 +101,7 @@ class RoomStateEventRestServlet(TransactionRestServlet):
         self.room_member_handler = hs.get_room_member_handler()
         self.message_handler = hs.get_message_handler()
         self.auth = hs.get_auth()
+        self.config = hs.config
 
     def register(self, http_server):
         # /room/$roomid/state/$eventtype
@@ -170,6 +171,30 @@ class RoomStateEventRestServlet(TransactionRestServlet):
 
         if state_key is not None:
             event_dict["state_key"] = state_key
+
+        # If the event is a retention policy definition for the room, check that it
+        # respects the boundaries imposed by the server's administrator.
+        if event_type == EventTypes.Retention:
+            min_lifetime = content.get("min_lifetime", self.config.retention_min_lifetime)
+            max_lifetime = content.get("max_lifetime", self.config.retention_max_lifetime)
+
+            if min_lifetime < self.config.retention_min_lifetime:
+                raise SynapseError(
+                    400,
+                    (
+                        "'min_lifetime' is lower than the value enforced by the server's"
+                        " administrator"
+                    ),
+                )
+
+            if max_lifetime > self.config.retention_max_lifetime:
+                raise SynapseError(
+                    400,
+                    (
+                        "'max_lifetime' is higher than the value enforced by the server's"
+                        " administrator"
+                    ),
+                )
 
         if event_type == EventTypes.Member:
             membership = content.get("membership", None)

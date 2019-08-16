@@ -32,7 +32,6 @@ from synapse.api.errors import (
     FederationError,
     IncompatibleRoomVersionError,
     NotFoundError,
-    StoreError,
     SynapseError,
     UnsupportedRoomVersionError,
 )

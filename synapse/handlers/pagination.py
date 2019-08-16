@@ -19,7 +19,7 @@ from twisted.internet import defer
 from twisted.python.failure import Failure
 
 from synapse.api.constants import EventTypes, Membership
-from synapse.api.errors import SynapseError, StoreError
+from synapse.api.errors import StoreError, SynapseError
 from synapse.storage.state import StateFilter
 from synapse.types import RoomStreamToken
 from synapse.util.async_helpers import ReadWriteLock

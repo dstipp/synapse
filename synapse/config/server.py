@@ -233,11 +233,11 @@ class ServerConfig(Config):
         self.retention_enabled = retention_config.get("enabled", False)
 
         self.retention_min_lifetime = self.parse_duration(
-            retention_config.get("min_lifetime")
+            retention_config.get("min_lifetime", 0)
         )
 
         self.retention_max_lifetime = self.parse_duration(
-            retention_config.get("max_lifetime")
+            retention_config.get("max_lifetime", 0)
         )
 
         if self.retention_enabled and not (

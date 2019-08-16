@@ -91,6 +91,16 @@ class PaginationHandler(object):
 
     @defer.inlineCallbacks
     def is_event_outdated(self, event_ts, room_id):
+        """Checks whether the event with a given timestamp should be considered outdated
+        according to the room's or server's retention policy.
+
+        Args:
+            event_ts (int): Timestamp of the event in milliseconds.
+            room_id (str): Room in which the event was sent.
+
+        Returns:
+            bool: True if the event should be considered as outdated, False otherwise.
+        """
         if self.config.retention_enabled:
             try:
                 retention_policy = yield self.store.get_retention_policy_for_room(
@@ -109,20 +119,30 @@ class PaginationHandler(object):
                     # need to ignore events that we have likely already purged.
                     defer.returnValue(True)
             except StoreError:
-                # Consider the event as outdated if we can't verify whether we should
+                # Consider the event as not outdated if we can't verify whether we should
                 # ignore it.
-                defer.returnValue(True)
+                defer.returnValue(False)
 
         defer.returnValue(False)
 
     @defer.inlineCallbacks
-    def purge_history_for_rooms_in_range(self, min_s, max_s):
+    def purge_history_for_rooms_in_range(self, min_ts, max_ts):
+        """Purge outdated events from every room which maximum retention period is within
+        ]min_ts ; max_ts]. If the configured maximum period in the server's configuration
+        is within this range, also targets rooms which don't have a retention policy.
+
+        Args:
+            min_ts (int): Timestamp in milliseconds that define the lower limit of the
+                range to handle.
+            max_ts (int): Timestamp in milliseconds that define the higher limit of the
+                range to handle.
+        """
         # If a room lacks a max_lifetime, we consider it equal to one defined in the
         # server's configuration, therefore we include these rooms if the server's
         # config's max_lifetime is in the provided range.
-        include_null = (min_s < self.config.retention_max_lifetime <= max_s)
+        include_null = (min_ts < self.config.retention_max_lifetime <= max_ts)
         rooms = yield self.store.get_rooms_for_retention_period_in_range(
-            min_s, max_s, include_null
+            min_ts, max_ts, include_null
         )
 
         for room in rooms:
@@ -133,6 +153,7 @@ class PaginationHandler(object):
             if max_lifetime is None:
                 max_lifetime = self.config.retention_max_lifetime
 
+            # Figure out what token we should start purging at.
             ts = self.clock.time_msec() - max_lifetime
 
             stream_ordering = (
@@ -166,7 +187,9 @@ class PaginationHandler(object):
 
             logger.info("Starting purging events in room %s", room_id)
 
-            # We want to purge everything, including local events.
+            # We want to purge everything, including local events, and to run the purge in
+            # the background so that it's not blocking any other operation apart from
+            # other purges in the same room.
             run_in_background(
                 self._purge_history,
                 purge_id, room_id, token, True,

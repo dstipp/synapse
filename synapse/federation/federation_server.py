@@ -217,6 +217,9 @@ class FederationServer(FederationBase):
                 )
                 continue
 
+            # Purge jobs for the message retention feature can be out of sync between
+            # servers, therefore we need to make sure we don't process outdated events if
+            # returned by the remote server.
             should_ignore = yield self.pagination_handler.is_event_outdated(
                 p.get("origin_server_ts", 0), room_id
             )

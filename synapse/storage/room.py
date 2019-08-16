@@ -747,7 +747,23 @@ class RoomStore(RoomWorkerStore, SearchStore):
         return local_media_mxcs, remote_media_mxcs
 
     @defer.inlineCallbacks
-    def get_rooms_for_retention_period_in_range(self, min_s, max_s, include_null=False):
+    def get_rooms_for_retention_period_in_range(self, min_ts, max_ts, include_null=False):
+        """Retrieves all of the rooms for which a retention policy is defined with a
+        max_lifetime within ]min_ts ; max_ts]. Optionnally includes the rooms which don't
+        have a retention policy.
+
+        Args:
+            min_ts (int): Timestamp in milliseconds that define the lower limit of the
+                range to handle.
+            max_ts (int): Timestamp in milliseconds that define the higher limit of the
+                range to handle.
+            include_null (bool): Whether to include rooms which retention policy is NULL
+                in the returned set.
+
+        Returns:
+            set[dict[str, int, int]]: The rooms within this range, along with their
+                retention policy (including "min_lifetime" and "max_lifetime").
+        """
 
         def get_rooms_for_retention_period_in_range_txn(txn):
             sql = (
@@ -761,7 +777,7 @@ class RoomStore(RoomWorkerStore, SearchStore):
             if include_null:
                 sql += " OR max_lifetime IS NULL"
 
-            txn.execute(sql, (min_s, max_s))
+            txn.execute(sql, (min_ts, max_ts))
 
             rows = self.cursor_to_dict(txn)
 
@@ -776,6 +792,15 @@ class RoomStore(RoomWorkerStore, SearchStore):
 
     @cachedInlineCallbacks()
     def get_retention_policy_for_room(self, room_id):
+        """Get the retention policy for a given room.
+
+        Args:
+            room_id (str): The ID of the room to get the retention policy of.
+
+        Returns:
+            dict[int, int]: "min_lifetime" and "max_lifetime" for this room, or an empty
+                object if the room doesn't have a retention policy.
+        """
         ret = yield self._simple_select_one(
             table="room_retention",
             keyvalues={

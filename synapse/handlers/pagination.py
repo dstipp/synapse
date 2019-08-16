@@ -19,7 +19,7 @@ from twisted.internet import defer
 from twisted.python.failure import Failure
 
 from synapse.api.constants import EventTypes, Membership
-from synapse.api.errors import SynapseError
+from synapse.api.errors import SynapseError, StoreError
 from synapse.storage.state import StateFilter
 from synapse.types import RoomStreamToken
 from synapse.util.async_helpers import ReadWriteLock
@@ -88,6 +88,32 @@ class PaginationHandler(object):
                     job["interval"],
                     job["min_lifetime"], job["max_lifetime"],
                 )
+
+    @defer.inlineCallbacks
+    def is_event_outdated(self, event_ts, room_id):
+        if self.config.retention_enabled:
+            try:
+                retention_policy = yield self.store.get_retention_policy_for_room(
+                    room_id
+                )
+
+                max_lifetime = retention_policy.get("max_lifetime")
+                if max_lifetime is None:
+                    max_lifetime = self.config.retention_max_lifetime
+
+                oldest_allowed_ts = self.clock.time_msec() - (max_lifetime * 1000)
+                event_ts = event_ts
+
+                if oldest_allowed_ts > event_ts:
+                    # Purge jobs are likely to get out of sync between servers, so we
+                    # need to ignore events that we have likely already purged.
+                    defer.returnValue(True)
+            except StoreError:
+                # Consider the event as outdated if we can't verify whether we should
+                # ignore it.
+                defer.returnValue(True)
+
+        defer.returnValue(False)
 
     @defer.inlineCallbacks
     def purge_history_for_rooms_in_range(self, min_s, max_s):

@@ -230,17 +230,23 @@ class ServerConfig(Config):
 
         retention_config = config.get("retention", {})
 
-        # TODO: require that min_lifetime and max_lifetime are filled if enabled is True
-        #   and drop defaults.
         self.retention_enabled = retention_config.get("enabled", False)
 
         self.retention_min_lifetime = self.parse_duration(
-            retention_config.get("min_lifetime", "1d")
+            retention_config.get("min_lifetime")
         )
 
         self.retention_max_lifetime = self.parse_duration(
-            retention_config.get("max_lifetime", "1y")
+            retention_config.get("max_lifetime")
         )
+
+        if self.retention_enabled and not (
+            self.retention_min_lifetime and self.retention_max_lifetime
+        ):
+            raise ConfigError(
+                "'min_lifetime' and 'max_lifetime' must be provided if the message"
+                " retention period feature is enabled."
+            )
 
         if self.retention_min_lifetime > self.retention_max_lifetime:
             raise ConfigError(

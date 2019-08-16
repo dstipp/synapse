@@ -111,6 +111,7 @@ class FederationHandler(BaseHandler):
         self.pusher_pool = hs.get_pusherpool()
         self.spam_checker = hs.get_spam_checker()
         self.event_creation_handler = hs.get_event_creation_handler()
+        self.pagination_handler = hs.get_pagination_handler()
         self._server_notices_mxid = hs.config.server_notices_mxid
         self.config = hs.config
         self.http_client = hs.get_simple_http_client()
@@ -518,6 +519,20 @@ class FederationHandler(BaseHandler):
         missing_events.sort(key=lambda x: x.depth)
 
         for ev in missing_events:
+            # Purge jobs for the message retention feature can be out of sync between
+            # servers, therefore we need to make sure we don't process outdated events if
+            # returned by the remote server.
+            should_ignore = yield self.pagination_handler.is_event_outdated(
+                ev.origin_server_ts, room_id
+            )
+
+            if should_ignore:
+                logger.info(
+                    "Ignoring event %s that's older than allowed by the retention"
+                    " policy for room %s" % (ev.event_id, room_id)
+                )
+                continue
+
             logger.info(
                 "[%s %s] Handling received prev_event %s",
                 room_id, event_id, ev.event_id,
@@ -678,7 +693,26 @@ class FederationHandler(BaseHandler):
             set(e.event_id for e in events)
         )
 
-        events = [e for e in events if e.event_id not in seen_events]
+        unseen_events = [e for e in events if e.event_id not in seen_events]
+
+        events = []
+
+        for event in unseen_events:
+            # Purge jobs for the message retention feature can be out of sync between
+            # servers, therefore we need to make sure we don't process outdated events if
+            # returned by the remote server.
+            should_ignore = yield self.pagination_handler.is_event_outdated(
+                event.origin_server_ts, room_id
+            )
+
+            if should_ignore:
+                logger.info(
+                    "Ignoring event %s that's older than allowed by the retention"
+                    " policy for room %s" % (event.event_id, room_id)
+                )
+                continue
+
+            events.append(event)
 
         if not events:
             defer.returnValue([])

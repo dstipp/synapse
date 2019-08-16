@@ -101,7 +101,7 @@ class PaginationHandler(object):
                 if max_lifetime is None:
                     max_lifetime = self.config.retention_max_lifetime
 
-                oldest_allowed_ts = self.clock.time_msec() - (max_lifetime * 1000)
+                oldest_allowed_ts = self.clock.time_msec() - max_lifetime
                 event_ts = event_ts
 
                 if oldest_allowed_ts > event_ts:
@@ -133,7 +133,7 @@ class PaginationHandler(object):
             if max_lifetime is None:
                 max_lifetime = self.config.retention_max_lifetime
 
-            ts = self.clock.time_msec() - (max_lifetime * 1000)
+            ts = self.clock.time_msec() - max_lifetime
 
             stream_ordering = (
                 yield self.store.find_first_stream_ordering_after_ts(ts)

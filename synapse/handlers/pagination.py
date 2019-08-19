@@ -171,6 +171,7 @@ class PaginationHandler(object):
                     "(ts %i => stream_ordering %i)",
                     ts, stream_ordering,
                 )
+                continue
 
             (stream, topo, _event_id) = r
             token = "t%d-%d" % (topo, stream)
@@ -185,7 +186,11 @@ class PaginationHandler(object):
 
             purge_id = random_string(16)
 
-            logger.info("Starting purging events in room %s", room_id)
+            self._purges_by_id[purge_id] = PurgeStatus()
+
+            logger.info(
+                "Starting purging events in room %s (purge_id %s)", (room_id, purge_id)
+            )
 
             # We want to purge everything, including local events, and to run the purge in
             # the background so that it's not blocking any other operation apart from

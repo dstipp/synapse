@@ -178,7 +178,10 @@ class RoomStateEventRestServlet(TransactionRestServlet):
             min_lifetime = content.get("min_lifetime", self.config.retention_min_lifetime)
             max_lifetime = content.get("max_lifetime", self.config.retention_max_lifetime)
 
-            if min_lifetime < self.config.retention_min_lifetime:
+            if not (
+                self.config.retention_min_lifetime < min_lifetime
+                < self.config.retention_max_lifetime
+            ):
                 raise SynapseError(
                     400,
                     (
@@ -187,7 +190,10 @@ class RoomStateEventRestServlet(TransactionRestServlet):
                     ),
                 )
 
-            if max_lifetime > self.config.retention_max_lifetime:
+            if not (
+                self.config.retention_min_lifetime < max_lifetime
+                < self.config.retention_max_lifetime
+            ):
                 raise SynapseError(
                     400,
                     (

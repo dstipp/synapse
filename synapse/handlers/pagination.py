@@ -86,7 +86,7 @@ class PaginationHandler(object):
                 self.clock.looping_call(
                     self.purge_history_for_rooms_in_range,
                     job["interval"],
-                    job["min_lifetime"], job["max_lifetime"],
+                    job["range_min"], job["range_max"],
                 )
 
     @defer.inlineCallbacks

@@ -228,7 +228,9 @@ class ServerConfig(Config):
             "show_users_in_user_directory", True,
         )
 
-        retention_config = config.get("retention", {})
+        retention_config = config.get("retention", None)
+        if retention_config is None:
+            retention_config = {}
 
         self.retention_enabled = retention_config.get("enabled", False)
 
@@ -241,7 +243,8 @@ class ServerConfig(Config):
         )
 
         if self.retention_enabled and not (
-            self.retention_min_lifetime and self.retention_max_lifetime
+            self.retention_min_lifetime is not None
+            and self.retention_max_lifetime is not None
         ):
             raise ConfigError(
                 "'min_lifetime' and 'max_lifetime' must be provided if the message"
@@ -257,7 +260,7 @@ class ServerConfig(Config):
         for purge_job_config in retention_config.get("purge_jobs", []):
             interval_config = purge_job_config.get("interval", None)
 
-            if purge_job_config.get("interval", None) is None:
+            if interval_config is None:
                 raise ConfigError(
                     (
                         "A retention policy's purge jobs configuration must have the"
@@ -266,50 +269,56 @@ class ServerConfig(Config):
                 )
 
             interval = self.parse_duration(interval_config)
+            range_config = purge_job_config.get("max_lifetime_range", None)
 
-            min_lifetime = self.parse_duration(
-                purge_job_config.get("min_lifetime", self.retention_min_lifetime)
+            if range_config is None:
+                raise ConfigError(
+                    "A retention policy's purge jobs configuration must have a range."
+                )
+
+            range_min = self.parse_duration(
+                range_config.get("min", self.retention_min_lifetime)
             )
 
-            max_lifetime = self.parse_duration(
-                purge_job_config.get("max_lifetime", self.retention_max_lifetime)
+            range_max = self.parse_duration(
+                range_config.get("max", self.retention_max_lifetime)
             )
 
-            if min_lifetime < self.retention_min_lifetime:
+            if range_min < self.retention_min_lifetime:
                 raise ConfigError(
                     (
                         "A retention policy's purge jobs configuration can not have a"
-                        " min_lifetime value that's lower than the global min_lifetime"
+                        " range's min value that's lower than the global min_lifetime"
                         " value."
                     )
                 )
 
-            if max_lifetime > self.retention_max_lifetime:
+            if range_max > self.retention_max_lifetime:
                 raise ConfigError(
                     (
                         "A retention policy's purge jobs configuration can not have a"
-                        " max_lifetime value that's greater than the global max_lifetime"
+                        " range's max value that's greater than the global max_lifetime"
                         " value."
                     )
                 )
 
-            if min_lifetime > max_lifetime:
+            if range_min > range_max:
                 raise ConfigError(
-                    "A retention policy's purge jobs configuration's 'min_lifetime' can"
-                    " not be greater than its 'max_lifetime'."
+                    "A retention policy's purge jobs configuration's range's max value"
+                    " can not be greater than its min value."
                 )
 
             self.retention_purge_jobs.append({
                 "interval": interval,
-                "min_lifetime": min_lifetime,
-                "max_lifetime": max_lifetime,
+                "range_min": range_min,
+                "range_max": range_max,
             })
 
         if not self.retention_purge_jobs:
             self.retention_purge_jobs = [{
                 "interval": self.parse_duration("1d"),
-                "min_lifetime": self.retention_min_lifetime,
-                "max_lifetime": self.retention_max_lifetime,
+                "range_min": self.retention_min_lifetime,
+                "range_max": self.retention_max_lifetime,
             }]
 
         self.listeners = []
@@ -755,43 +764,50 @@ class ServerConfig(Config):
         #
         # Room admins and mods can define a retention period for their rooms using the
         # 'im.vector.room.retention' state event, and server admins can cap this period
-        # by setting the 'min_lifetime' and 'max_lifetime' config options. This feature is
-        # disabled by default.
+        # by setting the 'min_lifetime' and 'max_lifetime' config options.
         #
         # If this feature is enabled, Synapse will regularly look for and purge events
         # which are older than the room's maximum retention period. Synapse will also
         # filter events received over federation so that events that should have been
         # purged are ignored and not stored again.
         #
-        # Rooms that lack the 'im.vector.room.retention' state event will be considered as
-        # if their maximum retention period is equal to the 'max_lifetime' parameter from
-        # the server's configuration.
-        #
-        # Server admins can also define the settings of the background jobs purging the
-        # events which lifetime has expired under the 'purge_jobs' section.
-        # If no configuration is provided, a single job will be setup to delete expired
-        # events in every room daily.
-        # Each job's configuration defines which range of message lifetime the job takes
-        # care of. For example, if 'min_lifetime' is '2d' and 'max_lifetime' is '3d', the
-        # job will handle purging expired events in rooms which state defines a
-        # 'max_lifetime' that's between 2 and 3 days.
-        #
-        # The rationale for this per-job configuration is that server admins might want to
-        # run the purge job at a low interval for rooms with low 'max_lifetime', but want
-        # to increase the interval for rooms with higher 'max_lifetime' in order to ease
-        # Synapse's load.
-        #
-        #retention:
-        #  enabled: True
-        #  min_lifetime: 1d
-        #  max_lifetime: 1y
-        #  purge_jobs:
-        #    - min_lifetime: 1d
-        #      max_lifetime: 3d
-        #      interval: 12h
-        #    - min_lifetime: 3d
-        #      max_lifetime: 1y
-        #      interval: 24h
+        retention:
+          # The message retention policies feature is disabled by default. Uncomment the
+          # following line to enable it.
+          #
+          #enabled: True
+
+          # Rooms that lack the 'im.vector.room.retention' state event will be considered
+          # as if their retention policy is equal to the 'min_lifetime' and 'max_lifetime'
+          # parameter from the server's configuration.
+          #
+          #min_lifetime: 1d
+          #max_lifetime: 1y
+
+          # Server admins can define the settings of the background jobs purging the
+          # events which lifetime has expired under the 'purge_jobs' section.
+          # If no configuration is provided, a single job will be setup to delete expired
+          # events in every room daily.
+          # Each job's configuration defines which range of message lifetime the job takes
+          # care of. For example, if 'min' is '2d' and 'max' is '3d', the job will handle
+          # purging expired events in rooms which state defines a 'max_lifetime' that's
+          # between 2 and 3 days.
+          #
+          # The rationale for this per-job configuration is that some rooms might have a
+          # retention policy with a low 'max_lifetime' which history needs to be purged of
+          # outdated messages on a very frequent basis (e.g. every 5min), but not want
+          # that purge to be performed by a job that's iterating over every room it knows,
+          # which would be quite heavy on the server.
+          #
+          #purge_jobs:
+          #  - max_lifetime_range:
+          #      min: 1d
+          #      max: 3d
+          #    interval: 5m
+          #  - max_lifetime_range:
+          #      min: 3d
+          #      max: 1y
+          #    interval: 24h
         """ % locals()
 
     def read_arguments(self, args):

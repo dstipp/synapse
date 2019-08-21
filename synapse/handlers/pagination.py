@@ -112,15 +112,19 @@ class PaginationHandler(object):
                     max_lifetime = self.config.retention_max_lifetime
 
                 oldest_allowed_ts = self.clock.time_msec() - max_lifetime
-                event_ts = event_ts
 
                 if oldest_allowed_ts > event_ts:
                     # Purge jobs are likely to get out of sync between servers, so we
                     # need to ignore events that we have likely already purged.
                     defer.returnValue(True)
-            except StoreError:
+            except StoreError as e:
                 # Consider the event as not outdated if we can't verify whether we should
                 # ignore it.
+                logger.warning(
+                    "Error when looking up the retention policy for room %s: %s" % (
+                        room_id, e,
+                    )
+                )
                 defer.returnValue(False)
 
         defer.returnValue(False)
@@ -189,7 +193,7 @@ class PaginationHandler(object):
             self._purges_by_id[purge_id] = PurgeStatus()
 
             logger.info(
-                "Starting purging events in room %s (purge_id %s)", (room_id, purge_id)
+                "Starting purging events in room %s (purge_id %s)" % (room_id, purge_id)
             )
 
             # We want to purge everything, including local events, and to run the purge in

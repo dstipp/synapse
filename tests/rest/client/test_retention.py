@@ -12,18 +12,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from mock import Mock
+
+from twisted.internet import defer
 
 from synapse.api.constants import EventTypes
+from synapse.events import FrozenEvent
 from synapse.rest import admin
 from synapse.rest.client.v1 import login, room
 
-from tests.unittest import HomeserverTestCase
+from tests import unittest
 
 one_hour_ms = 3600000
 one_day_ms = one_hour_ms * 24
 
 
-class RetentionTestCase(HomeserverTestCase):
+class RetentionTestCase(unittest.HomeserverTestCase):
     servlets = [
         admin.register_servlets,
         login.register_servlets,
@@ -32,13 +36,19 @@ class RetentionTestCase(HomeserverTestCase):
 
     def make_homeserver(self, reactor, clock):
         config = self.default_config()
+        config["default_room_version"] = "1"
         config["retention"] = {
             "enabled": True,
             "min_lifetime": one_day_ms,
             "max_lifetime": one_day_ms * 3,
         }
 
-        self.hs = self.setup_test_homeserver(config=config)
+        mock_federation_client = Mock(spec=["backfill"])
+
+        self.hs = self.setup_test_homeserver(
+            config=config,
+            federation_client=mock_federation_client,
+        )
         return self.hs
 
     def prepare(self, reactor, clock, homeserver):
@@ -89,6 +99,55 @@ class RetentionTestCase(HomeserverTestCase):
 
         self._test_retention_event_purged(room_id, one_day_ms * 2)
 
+    def test_backfill(self):
+        room_id = self.helper.create_room_as(self.user_id, tok=self.token)
+
+        # Send a first event at t = 0
+        sent_ts = self.reactor.seconds() * 1000
+
+        resp = self.helper.send(
+            room_id=room_id,
+            body="1",
+            tok=self.token,
+        )
+
+        event_id_first_event = resp.get("event_id")
+
+        self.reactor.advance(one_day_ms * 2 / 1000)
+
+        # Send a second event at t = 2d. Right now, neither the first nor the second event
+        # is outdated.
+        resp = self.helper.send(
+            room_id=room_id,
+            body="2",
+            tok=self.token,
+        )
+
+        event_id_second_event = resp.get("event_id")
+
+        # Check that backfill already does the right thing before we purge anything.
+        events = self.backfill(
+            room_id, event_id_first_event, event_id_second_event, sent_ts
+        )
+
+        # federation_handler.backfill filters out events that we have already seen,
+        # therefore we want it to return an empty list here.
+        self.assertEqual(len(events), 0, events)
+
+        # Set time to t = 4d, when the first event is outdated but the second one isn't.
+        self.reactor.advance(one_day_ms * 2 / 1000)
+
+        # Make sure the event has been purged.
+        self.get_event(room_id, event_id_first_event, expected_code=404)
+
+        events = self.backfill(
+            room_id, event_id_first_event, event_id_second_event, sent_ts
+        )
+
+        # federation_handler.backfill filters out events that we have already seen, as
+        # well as expired events, therefore we want it to return an empty list here.
+        self.assertEqual(len(events), 0, events)
+
     def _test_retention_event_purged(self, room_id, increment):
         # Send a first event to the room. This is the event we'll want to be purged at the
         # end of the test.
@@ -137,3 +196,36 @@ class RetentionTestCase(HomeserverTestCase):
         self.assertEqual(channel.code, expected_code, channel.result)
 
         return channel.json_body
+
+    def backfill(self, room_id, event_id, event_id_to_backfill_from, sent_ts):
+        """Sets the right mocked return value for federation_client.backfill, and calls
+        federation_handler.backfill
+        """
+        federation_client = self.hs.get_federation_client()
+
+        # It looks like we need to redefine this every time Synapse calls the mocked
+        # function, otherwise it seems to set itself to None after each call.
+        federation_client.backfill.return_value = defer.succeed([
+            FrozenEvent({
+                "auth_events": [],
+                "prev_events": [],
+                "sender": self.user_id,
+                "type": "m.room.message",
+                "room_id": room_id,
+                "event_id": event_id,
+                "origin_server_ts": sent_ts,
+                "depth": 1,
+                "content": {
+                    "body": "1"
+                }
+            })
+        ])
+
+        federation_handler = self.hs.get_handlers().federation_handler
+
+        return self.get_success(federation_handler.backfill(
+            dest="example.org",
+            room_id=room_id,
+            limit=1,
+            extremities=event_id_to_backfill_from,
+        ))
